@@ -271,4 +271,15 @@ def run_eso_method():
 
 
 if __name__ == '__main__':
-    run_eso_method()
+    import argparse
+    import cProfile
+
+    parser = argparse.ArgumentParser(description='Run the ESO demo')
+    parser.add_argument('--profile', action='store_true',
+                        help='run the algorithm under cProfile')
+    args = parser.parse_args()
+
+    if args.profile:
+        cProfile.run('run_eso_method()', 'eso_profile.prof')
+    else:
+        run_eso_method()
