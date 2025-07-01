@@ -6,6 +6,7 @@ from PIL import Image
 from scipy import sparse
 from scipy.sparse.linalg import spsolve
 import random
+import matplotlib.pyplot as plt
 
 
 def init_image(initial_boundary_conditions, conductive_cells, k0, kp_k0):
@@ -213,6 +214,9 @@ def run_eso_method():
     os.makedirs('Figure', exist_ok=True)
     os.makedirs('Topology', exist_ok=True)
 
+    plt.ion()
+    fig, ax = plt.subplots()
+
     boundary_image = Image.open(starting_image)
     initial_bc = np.array(boundary_image)
     height, width, _ = initial_bc.shape
@@ -254,6 +258,15 @@ def run_eso_method():
         )
         t_max = result[6]
         history_tmax.append(t_max)
+
+        print(f"Iteration {m}: T_max={t_max:.2f}")
+
+        ax.clear()
+        display_data = np.zeros_like(boundary_conditions)
+        display_data[boundary_conditions == high_conductivity] = 1
+        ax.imshow(display_data, cmap='gray')
+        ax.set_title(f"Iteration {m} - T_max {t_max:.2f}")
+        plt.pause(0.01)
 
         for i in range(min(max_cell_swap, len(growth))):
             history_map[growth[i,1].astype(int), growth[i,2].astype(int)] += 1
