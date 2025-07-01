@@ -257,11 +257,14 @@ def run_eso_method():
         ax.set_title(f"Iteration {m} - T_max {t_max:.2f}")
         plt.pause(0.01)
 
+        prev_max = history_map.max()
+
         for i in range(min(max_cell_swap, len(growth))):
             history_map[growth[i,1].astype(int), growth[i,2].astype(int)] += 1
             history_map[etching[i,1].astype(int), etching[i,2].astype(int)] += 1
 
-        if history_map.max() > history_map.max():
+        new_max = history_map.max()
+        if new_max > prev_max:
             max_cell_swap = max(max_cell_swap - 1, 1)
 
         if m > 10:  # limit iterations for testing
