@@ -247,7 +247,7 @@ def fun_eso_algorithm(boundary_conditions, kp_k0, k0, heat_sink_temperature, del
     return boundary_conditions, np.array(growth), np.array(etching)
 
 
-def run_eso_method():
+def run_eso_method(max_iterations=None):
     high_conductivity = 10
     low_conductivity = 1
     heat_sink_temperature = 298
@@ -323,7 +323,7 @@ def run_eso_method():
         if new_max > prev_max:
             max_cell_swap = max(max_cell_swap - 1, 1)
 
-        if m > 10:  # limit iterations for testing
+        if max_iterations is not None and m >= max_iterations:
             break
 
     print('Converged after', m, 'iterations')
@@ -336,9 +336,14 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Run the ESO demo')
     parser.add_argument('--profile', action='store_true',
                         help='run the algorithm under cProfile')
+    parser.add_argument('--max-iterations', type=int, default=None,
+                        help='terminate after this many iterations')
     args = parser.parse_args()
 
     if args.profile:
-        cProfile.run('run_eso_method()', 'eso_profile.prof')
+        cProfile.run(
+            f'run_eso_method(max_iterations={args.max_iterations!r})',
+            'eso_profile.prof'
+        )
     else:
-        run_eso_method()
+        run_eso_method(max_iterations=args.max_iterations)
