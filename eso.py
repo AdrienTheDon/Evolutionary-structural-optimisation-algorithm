@@ -298,6 +298,8 @@ def run_eso_method(max_iterations=None):
     m = 0
     history_tmax = []
     while history_map.max() < max_redounding_move_allowed:
+        if max_iterations is not None and m >= max_iterations:
+            break
         m += 1
         boundary_conditions, growth, etching = fun_eso_algorithm(
             boundary_conditions, high_conductivity, low_conductivity,
@@ -347,9 +349,6 @@ def run_eso_method(max_iterations=None):
         new_max = history_map.max()
         if new_max > prev_max:
             max_cell_swap = max(max_cell_swap - 1, 1)
-
-        if max_iterations is not None and m >= max_iterations:
-            break
 
     print('Converged after', m, 'iterations')
 
