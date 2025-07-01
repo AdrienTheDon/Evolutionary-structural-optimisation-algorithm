@@ -14,8 +14,6 @@ An improvement of this code is also available: the [Progressive ESO (PESO)](http
 
 **Code free to use, please cite the author according to the license !**
 
-It is meant to be used with the [Parallel computing toolbox of Matlab](https://fr.mathworks.com/products/parallel-computing.html) on multi-core processors. The code itself solves a Finite Difference approximation of the heat equation on unspecified shapes with a direct sparse solver. The test case converges in about one day on a desktop computer with 8 cores.
-
 ## Usage
 
 Run the Python implementation with:
