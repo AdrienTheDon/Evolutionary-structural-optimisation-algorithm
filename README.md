@@ -1,6 +1,8 @@
 ## Evolutionary Structural Optimisation (ESO) algorithm for thermal science
 
-This code is intended to solve the Area-to-point problem in thermal science with a bidirectionnal ESO algorithm. The results of this algorithm has never been published in any peer-reviewed journal, since it's very well-known and has been implemented many times before mine (or I guess ?). 
+This repository contains the original MATLAB implementation of the ESO algorithm as well as a **Python adaptation**. The Python script (`eso.py`) is a direct translation of the MATLAB code written by **Raphael Boichot** located in the `Codes` directory.
+
+This code is intended to solve the Area-to-point problem in thermal science with a bidirectionnal ESO algorithm. The results of this algorithm has never been published in any peer-reviewed journal, since it's very well-known and has been implemented many times before mine (or I guess ?).
 
 It is very easy to use: enter the filling ratio and the ratio of conductivity of two materials on a heating surface linked to a localized heat sink and it makes the conductive matter (in dark) evolve following a very simple principle :
 - find the position of the least quantity (a pixel) of conductive matter that does not impede maximal temperature of the domain when it's removed;
