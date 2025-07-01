@@ -313,6 +313,19 @@ def run_eso_method():
         ax.set_title(f"Iteration {m} - T_max {t_max:.2f}")
         plt.pause(0.01)
 
+        fig.savefig(
+            os.path.join(
+                "Figure",
+                f"Figure_kp_ko_{high_conductivity}_phi_{filling_ratio}_{m:06d}.png",
+            )
+        )
+        Image.fromarray((display_data * 255).astype(np.uint8)).save(
+            os.path.join(
+                "Topology",
+                f"Topology_kp_ko_{high_conductivity}_phi_{filling_ratio}_{m:06d}.png",
+            )
+        )
+
         prev_max = history_map.max()
 
         for i in range(min(max_cell_swap, len(growth))):
