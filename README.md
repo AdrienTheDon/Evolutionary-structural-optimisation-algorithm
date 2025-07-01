@@ -16,6 +16,23 @@ An improvement of this code is also available: the [Progressive ESO (PESO)](http
 
 It is meant to be used with the [Parallel computing toolbox of Matlab](https://fr.mathworks.com/products/parallel-computing.html) on multi-core processors. The code itself solves a Finite Difference approximation of the heat equation on unspecified shapes with a direct sparse solver. The test case converges in about one day on a desktop computer with 8 cores.
 
+## Usage
+
+Run the Python implementation with:
+
+```bash
+python eso.py
+```
+
+To generate profiling statistics use the `--profile` flag:
+
+```bash
+python eso.py --profile
+```
+
+This writes timing information to `eso_profile.prof` which can be
+inspected later with tools such as `pstats`.
+
 ## Test case
 ![test case](/Pictures/Test_case.png)
 
