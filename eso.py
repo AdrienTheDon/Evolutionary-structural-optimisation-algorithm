@@ -7,20 +7,93 @@ from scipy import sparse
 from scipy.sparse.linalg import spsolve
 import random
 import matplotlib.pyplot as plt
+from numba import njit
 
 
+@njit
 def init_image(initial_boundary_conditions, conductive_cells, k0, kp_k0):
     """Fill a blank domain with random conductive cells."""
     # vectorised random fill of the domain instead of a while loop
     candidates = np.argwhere(initial_boundary_conditions == k0)
     if conductive_cells >= len(candidates):
-        initial_boundary_conditions[candidates[:, 0], candidates[:, 1]] = kp_k0
+        for idx in range(len(candidates)):
+            i = candidates[idx, 0]
+            j = candidates[idx, 1]
+            initial_boundary_conditions[i, j] = kp_k0
         return initial_boundary_conditions
 
-    chosen = np.random.choice(len(candidates), conductive_cells, replace=False)
-    selected = candidates[chosen]
-    initial_boundary_conditions[selected[:, 0], selected[:, 1]] = kp_k0
+    perm = np.random.permutation(len(candidates))
+    selected = perm[:conductive_cells]
+    for idx in selected:
+        i = candidates[idx, 0]
+        j = candidates[idx, 1]
+        initial_boundary_conditions[i, j] = kp_k0
     return initial_boundary_conditions
+
+
+@njit
+def _assemble_system(boundary_conditions, conductivity_table, temp, address, k0, delta_x, p_vol):
+    height, width = boundary_conditions.shape
+    max_entries = height * width * 5
+    rows = np.empty(max_entries, dtype=np.int64)
+    cols = np.empty(max_entries, dtype=np.int64)
+    data = np.empty(max_entries, dtype=np.float64)
+    B = np.zeros(height * width, dtype=np.float64)
+    idx = 0
+    for i in range(height):
+        for j in range(width):
+            ind_1 = address[i, j]
+            fin = False
+            if boundary_conditions[i, j] not in (-2, -3):
+                ind_2 = address[i - 1, j]
+                ind_3 = address[i, j + 1]
+                ind_4 = address[i + 1, j]
+                ind_5 = address[i, j - 1]
+                somme_cond = conductivity_table[i, j, 0] + conductivity_table[i, j, 1] + conductivity_table[i, j, 2] + conductivity_table[i, j, 3]
+            if boundary_conditions[i, j] in (-2, -3):
+                B[ind_1] = temp[i, j]
+                rows[idx] = ind_1
+                cols[idx] = ind_1
+                data[idx] = 1.0
+                idx += 1
+                fin = True
+            else:
+                rows[idx] = ind_1
+                cols[idx] = ind_1
+                data[idx] = -somme_cond
+                idx += 1
+                if boundary_conditions[i, j] == k0:
+                    B[ind_1] -= p_vol * delta_x * delta_x
+            if not fin:
+                if boundary_conditions[i - 1, j] in (-2, -3):
+                    B[ind_1] -= temp[i - 1, j] * conductivity_table[i, j, 0]
+                else:
+                    rows[idx] = ind_1
+                    cols[idx] = ind_2
+                    data[idx] = conductivity_table[i, j, 0]
+                    idx += 1
+                if boundary_conditions[i, j + 1] in (-2, -3):
+                    B[ind_1] -= temp[i, j + 1] * conductivity_table[i, j, 1]
+                else:
+                    rows[idx] = ind_1
+                    cols[idx] = ind_3
+                    data[idx] = conductivity_table[i, j, 1]
+                    idx += 1
+                if boundary_conditions[i + 1, j] in (-2, -3):
+                    B[ind_1] -= temp[i + 1, j] * conductivity_table[i, j, 2]
+                else:
+                    rows[idx] = ind_1
+                    cols[idx] = ind_4
+                    data[idx] = conductivity_table[i, j, 2]
+                    idx += 1
+                if boundary_conditions[i, j - 1] in (-2, -3):
+                    B[ind_1] -= temp[i, j - 1] * conductivity_table[i, j, 3]
+                else:
+                    rows[idx] = ind_1
+                    cols[idx] = ind_5
+                    data[idx] = conductivity_table[i, j, 3]
+                    idx += 1
+    return rows[:idx], cols[:idx], data[:idx], B
 
 
 def finite_temp_direct_sparse(kp_k0, k0, heat_sink_temperature, delta_x, p_vol, boundary_conditions):
@@ -44,56 +117,7 @@ def finite_temp_direct_sparse(kp_k0, k0, heat_sink_temperature, delta_x, p_vol, 
     conductivity_table[1:-1, 1:-1, 3] = delta_x / ((delta_x / 2) / west + (delta_x / 2) / center)
 
     address = np.arange(height * width).reshape((height, width))
-    rows, cols, data = [], [], []
-    B = np.zeros(height * width)
-
-    for i in range(height):
-        for j in range(width):
-            ind_1 = address[i, j]
-            if boundary_conditions[i, j] not in (-2, -3):
-                ind_2 = address[i - 1, j]
-                ind_3 = address[i, j + 1]
-                ind_4 = address[i + 1, j]
-                ind_5 = address[i, j - 1]
-                somme_cond = conductivity_table[i, j].sum()
-            fin = False
-            if boundary_conditions[i, j] in (-2, -3):
-                B[ind_1] = temp[i, j]
-                rows.append(ind_1)
-                cols.append(ind_1)
-                data.append(1)
-                fin = True
-            else:
-                rows.append(ind_1)
-                cols.append(ind_1)
-                data.append(-somme_cond)
-                if boundary_conditions[i, j] == k0:
-                    B[ind_1] -= p_vol * delta_x**2
-            if not fin:
-                if boundary_conditions[i - 1, j] in (-2, -3):
-                    B[ind_1] -= temp[i - 1, j] * conductivity_table[i, j, 0]
-                else:
-                    rows.append(ind_1)
-                    cols.append(ind_2)
-                    data.append(conductivity_table[i, j, 0])
-                if boundary_conditions[i, j + 1] in (-2, -3):
-                    B[ind_1] -= temp[i, j + 1] * conductivity_table[i, j, 1]
-                else:
-                    rows.append(ind_1)
-                    cols.append(ind_3)
-                    data.append(conductivity_table[i, j, 1])
-                if boundary_conditions[i + 1, j] in (-2, -3):
-                    B[ind_1] -= temp[i + 1, j] * conductivity_table[i, j, 2]
-                else:
-                    rows.append(ind_1)
-                    cols.append(ind_4)
-                    data.append(conductivity_table[i, j, 2])
-                if boundary_conditions[i, j - 1] in (-2, -3):
-                    B[ind_1] -= temp[i, j - 1] * conductivity_table[i, j, 3]
-                else:
-                    rows.append(ind_1)
-                    cols.append(ind_5)
-                    data.append(conductivity_table[i, j, 3])
+    rows, cols, data, B = _assemble_system(boundary_conditions, conductivity_table, temp, address, k0, delta_x, p_vol)
 
     A = sparse.csr_matrix((data, (rows, cols)), shape=(height * width, height * width))
     T = spsolve(A, B)
