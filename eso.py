@@ -6,18 +6,20 @@ from PIL import Image
 from scipy import sparse
 from scipy.sparse.linalg import spsolve
 import random
+import matplotlib.pyplot as plt
 
 
 def init_image(initial_boundary_conditions, conductive_cells, k0, kp_k0):
     """Fill a blank domain with random conductive cells."""
-    height, width = initial_boundary_conditions.shape
-    k = 0
-    while k < conductive_cells:
-        h = np.random.randint(0, height)
-        l = np.random.randint(0, width)
-        if initial_boundary_conditions[h, l] == k0:
-            initial_boundary_conditions[h, l] = kp_k0
-            k += 1
+    # vectorised random fill of the domain instead of a while loop
+    candidates = np.argwhere(initial_boundary_conditions == k0)
+    if conductive_cells >= len(candidates):
+        initial_boundary_conditions[candidates[:, 0], candidates[:, 1]] = kp_k0
+        return initial_boundary_conditions
+
+    chosen = np.random.choice(len(candidates), conductive_cells, replace=False)
+    selected = candidates[chosen]
+    initial_boundary_conditions[selected[:, 0], selected[:, 1]] = kp_k0
     return initial_boundary_conditions
 
 
@@ -30,12 +32,16 @@ def finite_temp_direct_sparse(kp_k0, k0, heat_sink_temperature, delta_x, p_vol, 
     temporary[temporary == -2] = 1e-9
     temporary[temporary == -3] = kp_k0
 
-    for k in range(1, height-1):
-        for l in range(1, width-1):
-            conductivity_table[k, l, 0] = delta_x / ((delta_x / 2) / temporary[k-1, l] + (delta_x / 2) / temporary[k, l])
-            conductivity_table[k, l, 1] = delta_x / ((delta_x / 2) / temporary[k, l+1] + (delta_x / 2) / temporary[k, l])
-            conductivity_table[k, l, 2] = delta_x / ((delta_x / 2) / temporary[k+1, l] + (delta_x / 2) / temporary[k, l])
-            conductivity_table[k, l, 3] = delta_x / ((delta_x / 2) / temporary[k, l-1] + (delta_x / 2) / temporary[k, l])
+    center = temporary[1:-1, 1:-1]
+    north = temporary[:-2, 1:-1]
+    east = temporary[1:-1, 2:]
+    south = temporary[2:, 1:-1]
+    west = temporary[1:-1, :-2]
+
+    conductivity_table[1:-1, 1:-1, 0] = delta_x / ((delta_x / 2) / north + (delta_x / 2) / center)
+    conductivity_table[1:-1, 1:-1, 1] = delta_x / ((delta_x / 2) / east + (delta_x / 2) / center)
+    conductivity_table[1:-1, 1:-1, 2] = delta_x / ((delta_x / 2) / south + (delta_x / 2) / center)
+    conductivity_table[1:-1, 1:-1, 3] = delta_x / ((delta_x / 2) / west + (delta_x / 2) / center)
 
     address = np.arange(height * width).reshape((height, width))
     rows, cols, data = [], [], []
@@ -92,9 +98,7 @@ def finite_temp_direct_sparse(kp_k0, k0, heat_sink_temperature, delta_x, p_vol, 
     A = sparse.csr_matrix((data, (rows, cols)), shape=(height * width, height * width))
     T = spsolve(A, B)
 
-    for i in range(height):
-        for j in range(width):
-            temp[i, j] = T[address[i, j]]
+    temp = T.reshape((height, width))
 
     maximal_temperature = temp.max()
     variance = temp.var()
@@ -106,25 +110,26 @@ def finite_temp_direct_sparse(kp_k0, k0, heat_sink_temperature, delta_x, p_vol, 
 
     entropy = np.zeros((height, width))
     sum_of_entropy = 0.0
-    for k in range(height):
-        for l in range(width):
-            if boundary_conditions[k, l] in (-2, -3):
-                continue
-            flux1 = conductivity_table[k, l, 0] * (temp[k - 1, l] - temp[k, l])
-            flux2 = conductivity_table[k, l, 1] * (temp[k, l + 1] - temp[k, l])
-            flux3 = conductivity_table[k, l, 2] * (temp[k + 1, l] - temp[k, l])
-            flux4 = conductivity_table[k, l, 3] * (temp[k, l - 1] - temp[k, l])
-            flux5 = p_vol * delta_x * delta_x if boundary_conditions[k, l] == k0 else 0.0
-            if boundary_conditions[k - 1, l] != -2:
-                entropy[k, l] += (abs(flux1 / temp[k, l] - abs(flux1 / temp[k - 1, l]))) * np.sign(temp[k, l] - temp[k - 1, l])
-            if boundary_conditions[k, l + 1] != -2:
-                entropy[k, l] += (abs(flux2 / temp[k, l] - abs(flux2 / temp[k, l + 1]))) * np.sign(temp[k, l] - temp[k, l + 1])
-            if boundary_conditions[k + 1, l] != -2:
-                entropy[k, l] += (abs(flux3 / temp[k, l] - abs(flux3 / temp[k + 1, l]))) * np.sign(temp[k, l] - temp[k + 1, l])
-            if boundary_conditions[k, l - 1] != -2:
-                entropy[k, l] += (abs(flux4 / temp[k, l] - abs(flux4 / temp[k, l - 1]))) * np.sign(temp[k, l] - temp[k, l - 1])
-            entropy[k, l] += flux5 / temp[k, l]
-            sum_of_entropy += entropy[k, l]
+    mask_internal = (boundary_conditions != -2) & (boundary_conditions != -3)
+    flux1 = conductivity_table[:, :, 0] * (np.roll(temp, 1, axis=0) - temp)
+    flux2 = conductivity_table[:, :, 1] * (np.roll(temp, -1, axis=1) - temp)
+    flux3 = conductivity_table[:, :, 2] * (np.roll(temp, -1, axis=0) - temp)
+    flux4 = conductivity_table[:, :, 3] * (np.roll(temp, 1, axis=1) - temp)
+    flux5 = np.where(boundary_conditions == k0, p_vol * delta_x * delta_x, 0.0)
+
+    valid_n = boundary_conditions != -2
+    valid_s = np.roll(boundary_conditions, -1, axis=0) != -2
+    valid_e = np.roll(boundary_conditions, -1, axis=1) != -2
+    valid_w = np.roll(boundary_conditions, 1, axis=1) != -2
+
+    entropy += np.where(valid_n, np.abs(flux1 / temp - np.abs(flux1 / np.roll(temp, 1, axis=0))) * np.sign(temp - np.roll(temp, 1, axis=0)), 0)
+    entropy += np.where(valid_e, np.abs(flux2 / temp - np.abs(flux2 / np.roll(temp, -1, axis=1))) * np.sign(temp - np.roll(temp, -1, axis=1)), 0)
+    entropy += np.where(valid_s, np.abs(flux3 / temp - np.abs(flux3 / np.roll(temp, -1, axis=0))) * np.sign(temp - np.roll(temp, -1, axis=0)), 0)
+    entropy += np.where(valid_w, np.abs(flux4 / temp - np.abs(flux4 / np.roll(temp, 1, axis=1))) * np.sign(temp - np.roll(temp, 1, axis=1)), 0)
+    entropy += flux5 / np.where(temp == 0, 1, temp)
+
+    entropy *= mask_internal
+    sum_of_entropy = entropy.sum()
 
     row, col = np.argwhere(temp == maximal_temperature)[0]
     row_ref = height - 1
@@ -137,34 +142,22 @@ def finite_temp_direct_sparse(kp_k0, k0, heat_sink_temperature, delta_x, p_vol, 
 def fun_eso_algorithm(boundary_conditions, kp_k0, k0, heat_sink_temperature, delta_x, p_vol, max_rank, max_cell_swap):
     height, width = boundary_conditions.shape
     grow = np.zeros((height, width), dtype=bool)
-    for k in range(1, height-1):
-        for l in range(1, width-1):
-            if boundary_conditions[k, l] == kp_k0:
-                if boundary_conditions[k+1, l] == k0:
-                    grow[k+1, l] = True
-                if boundary_conditions[k-1, l] == k0:
-                    grow[k-1, l] = True
-                if boundary_conditions[k, l+1] == k0:
-                    grow[k, l+1] = True
-                if boundary_conditions[k, l-1] == k0:
-                    grow[k, l-1] = True
+    kp_mask = boundary_conditions == kp_k0
+    grow[1:, :] |= kp_mask[:-1, :] & (boundary_conditions[1:, :] == k0)
+    grow[:-1, :] |= kp_mask[1:, :] & (boundary_conditions[:-1, :] == k0)
+    grow[:, 1:] |= kp_mask[:, :-1] & (boundary_conditions[:, 1:] == k0)
+    grow[:, :-1] |= kp_mask[:, 1:] & (boundary_conditions[:, :-1] == k0)
 
-    grow_pos = [(k, l) for k in range(height) for l in range(width) if grow[k, l]]
+    grow_pos = np.argwhere(grow)
 
     etch = np.zeros((height, width), dtype=bool)
-    for k in range(1, height-1):
-        for l in range(1, width-1):
-            if boundary_conditions[k, l] == k0:
-                if boundary_conditions[k+1, l] == kp_k0:
-                    etch[k+1, l] = True
-                if boundary_conditions[k-1, l] == kp_k0:
-                    etch[k-1, l] = True
-                if boundary_conditions[k, l+1] == kp_k0:
-                    etch[k, l+1] = True
-                if boundary_conditions[k, l-1] == kp_k0:
-                    etch[k, l-1] = True
+    k0_mask = boundary_conditions == k0
+    etch[1:, :] |= k0_mask[:-1, :] & (boundary_conditions[1:, :] == kp_k0)
+    etch[:-1, :] |= k0_mask[1:, :] & (boundary_conditions[:-1, :] == kp_k0)
+    etch[:, 1:] |= k0_mask[:, :-1] & (boundary_conditions[:, 1:] == kp_k0)
+    etch[:, :-1] |= k0_mask[:, 1:] & (boundary_conditions[:, :-1] == kp_k0)
 
-    etch_pos = [(k, l) for k in range(height) for l in range(width) if etch[k, l]]
+    etch_pos = np.argwhere(etch)
 
     grow_scores = []
     for (gk, gl) in grow_pos:
@@ -213,6 +206,9 @@ def run_eso_method():
     os.makedirs('Figure', exist_ok=True)
     os.makedirs('Topology', exist_ok=True)
 
+    plt.ion()
+    fig, ax = plt.subplots()
+
     boundary_image = Image.open(starting_image)
     initial_bc = np.array(boundary_image)
     height, width, _ = initial_bc.shape
@@ -220,22 +216,19 @@ def run_eso_method():
     history_map = np.zeros((height, width))
     history_map[0, 0] = 1
 
-    non_conductive = 0
-    conductive = 0
-    for k in range(height):
-        for l in range(width):
-            red, green, blue = initial_bc[k, l]
-            if red == 255 and green == 255 and blue == 255:
-                pixel = low_conductivity
-                non_conductive += 1
-            elif red == 127 and green == 127 and blue == 127:
-                pixel = -2
-            elif red == 0 and green == 0 and blue == 255:
-                pixel = -3
-            else:
-                pixel = high_conductivity
-                conductive += 1
-            boundary_conditions[k, l] = pixel
+    rgb = initial_bc[:, :, :3]
+    mask_white = np.all(rgb == 255, axis=2)
+    mask_gray = np.all(rgb == 127, axis=2)
+    mask_blue = np.all(rgb == np.array([0, 0, 255]), axis=2)
+    mask_other = ~(mask_white | mask_gray | mask_blue)
+
+    boundary_conditions[mask_white] = low_conductivity
+    boundary_conditions[mask_gray] = -2
+    boundary_conditions[mask_blue] = -3
+    boundary_conditions[mask_other] = high_conductivity
+
+    non_conductive = mask_white.sum()
+    conductive = mask_other.sum()
 
     number_cond = int(np.ceil(non_conductive * filling_ratio))
     boundary_conditions = init_image(boundary_conditions, number_cond, low_conductivity, high_conductivity)
@@ -254,6 +247,15 @@ def run_eso_method():
         )
         t_max = result[6]
         history_tmax.append(t_max)
+
+        print(f"Iteration {m}: T_max={t_max:.2f}")
+
+        ax.clear()
+        display_data = np.zeros_like(boundary_conditions)
+        display_data[boundary_conditions == high_conductivity] = 1
+        ax.imshow(display_data, cmap='gray')
+        ax.set_title(f"Iteration {m} - T_max {t_max:.2f}")
+        plt.pause(0.01)
 
         for i in range(min(max_cell_swap, len(growth))):
             history_map[growth[i,1].astype(int), growth[i,2].astype(int)] += 1
