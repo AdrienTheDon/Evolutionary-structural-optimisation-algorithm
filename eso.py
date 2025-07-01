@@ -7,6 +7,7 @@ from scipy import sparse
 from scipy.sparse.linalg import spsolve
 import random
 import matplotlib.pyplot as plt
+from concurrent.futures import ProcessPoolExecutor
 
 
 def init_image(initial_boundary_conditions, conductive_cells, k0, kp_k0):
@@ -139,6 +140,16 @@ def finite_temp_direct_sparse(kp_k0, k0, heat_sink_temperature, delta_x, p_vol, 
     return distance, sum_of_entropy, entropy, border_variance, variance, mean_temperature, maximal_temperature, temp, grad, variance_grad
 
 
+def _evaluate_candidate(boundary_conditions, kp_k0, k0, heat_sink_temperature, delta_x, p_vol, k, l, value):
+    """Helper for parallel candidate evaluation."""
+    temp_cond = boundary_conditions.copy()
+    temp_cond[k, l] = value
+    _, _, _, _, _, _, obj, _, _, _ = finite_temp_direct_sparse(
+        kp_k0, k0, heat_sink_temperature, delta_x, p_vol, temp_cond
+    )
+    return obj, k, l
+
+
 def fun_eso_algorithm(boundary_conditions, kp_k0, k0, heat_sink_temperature, delta_x, p_vol, max_rank, max_cell_swap):
     height, width = boundary_conditions.shape
     grow = np.zeros((height, width), dtype=bool)
@@ -160,23 +171,45 @@ def fun_eso_algorithm(boundary_conditions, kp_k0, k0, heat_sink_temperature, del
     etch_pos = np.argwhere(etch)
 
     grow_scores = []
-    for (gk, gl) in grow_pos:
-        temp_cond = boundary_conditions.copy()
-        temp_cond[gk, gl] = kp_k0
-        _, _, _, _, _, _, obj, _, _, _ = finite_temp_direct_sparse(
-            kp_k0, k0, heat_sink_temperature, delta_x, p_vol, temp_cond
-        )
-        grow_scores.append((obj, gk, gl))
+    with ProcessPoolExecutor() as executor:
+        futures = [
+            executor.submit(
+                _evaluate_candidate,
+                boundary_conditions,
+                kp_k0,
+                k0,
+                heat_sink_temperature,
+                delta_x,
+                p_vol,
+                int(gk),
+                int(gl),
+                kp_k0,
+            )
+            for gk, gl in grow_pos
+        ]
+        for fut in futures:
+            grow_scores.append(fut.result())
     grow_scores.sort()
 
     etch_scores = []
-    for (ek, el) in etch_pos:
-        temp_cond = boundary_conditions.copy()
-        temp_cond[ek, el] = k0
-        _, _, _, _, _, _, obj, _, _, _ = finite_temp_direct_sparse(
-            kp_k0, k0, heat_sink_temperature, delta_x, p_vol, temp_cond
-        )
-        etch_scores.append((obj, ek, el))
+    with ProcessPoolExecutor() as executor:
+        futures = [
+            executor.submit(
+                _evaluate_candidate,
+                boundary_conditions,
+                kp_k0,
+                k0,
+                heat_sink_temperature,
+                delta_x,
+                p_vol,
+                int(ek),
+                int(el),
+                k0,
+            )
+            for ek, el in etch_pos
+        ]
+        for fut in futures:
+            etch_scores.append(fut.result())
     etch_scores.sort()
 
     growth = random.sample(grow_scores[:max_rank], min(max_rank, len(grow_scores)))
