@@ -272,6 +272,12 @@ def run_eso_method(max_iterations=None):
     history_map = np.zeros((height, width))
     history_map[0, 0] = 1
 
+    frames_dir = os.path.join(
+        "Pictures",
+        f"frames_kp{high_conductivity}_phi{filling_ratio}_{width}x{height}",
+    )
+    os.makedirs(frames_dir, exist_ok=True)
+
     rgb = initial_bc[:, :, :3]
     mask_white = np.all(rgb == 255, axis=2)
     mask_gray = np.all(rgb == 127, axis=2)
@@ -317,6 +323,12 @@ def run_eso_method(max_iterations=None):
             os.path.join(
                 "Figure",
                 f"Figure_kp_ko_{high_conductivity}_phi_{filling_ratio}_{m:06d}.png",
+            )
+        )
+        fig.savefig(
+            os.path.join(
+                frames_dir,
+                f"frame_{m:06d}.png",
             )
         )
         Image.fromarray((display_data * 255).astype(np.uint8)).save(

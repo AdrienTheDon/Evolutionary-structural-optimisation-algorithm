@@ -33,6 +33,11 @@ python eso.py --profile
 This writes timing information to `eso_profile.prof` which can be
 inspected later with tools such as `pstats`.
 
+During execution, each iteration is also saved as an image in a
+subdirectory of `Pictures`. The directory name includes the conductivity
+ratio, filling ratio and image size so it can easily be used to build a
+GIF afterwards.
+
 ## Test case
 ![test case](/Pictures/Test_case.png)
 
