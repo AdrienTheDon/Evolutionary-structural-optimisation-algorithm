@@ -36,6 +36,17 @@ subdirectory of `Pictures`. The directory name includes the conductivity
 ratio, filling ratio and image size so it can easily be used to build a
 GIF afterwards.
 
+## Generate a 3D model from an image
+
+The `revolve_to_stl.py` helper converts a black and white image into an
+STL file by revolving the white pixels around the vertical axis.
+
+```bash
+python revolve_to_stl.py <image> <output.stl>
+```
+
+Use `--segments` to control the angular resolution of the revolution.
+
 ## Test case
 ![test case](/Pictures/Test_case.png)
 
